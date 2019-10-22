@@ -387,6 +387,7 @@ public abstract class Recycler<T> {
                     return false;
                 }
                 this.head.link = head = head.next;
+                this.head.reclaimSpace(LINK_CAPACITY);
             }
 
             final int srcStart = head.readIndex;
@@ -510,6 +511,10 @@ public abstract class Recycler<T> {
                     return null;
                 }
                 size = this.size;
+                if (size <= 0) {
+                    // double check, avoid races
+                    return null;
+                }
             }
             size --;
             DefaultHandle ret = elements[size];

@@ -84,6 +84,7 @@ public final class Native {
     public static native void eventFdWrite(int fd, long value);
     public static native void eventFdRead(int fd);
     static native void timerFdRead(int fd);
+    static native void timerFdSetTime(int fd, int sec, int nsec) throws IOException;
 
     public static FileDescriptor newEpollCreate() {
         return new FileDescriptor(epollCreate());
@@ -91,8 +92,21 @@ public final class Native {
 
     private static native int epollCreate();
 
+    /**
+     * @deprecated this method is no longer supported. This functionality is internal to this package.
+     */
+    @Deprecated
     public static int epollWait(FileDescriptor epollFd, EpollEventArray events, FileDescriptor timerFd,
                                 int timeoutSec, int timeoutNs) throws IOException {
+        if (timeoutSec == 0 && timeoutNs == 0) {
+            // Zero timeout => poll (aka return immediately)
+            return epollWait(epollFd, events, 0);
+        }
+        if (timeoutSec == Integer.MAX_VALUE) {
+            // Max timeout => wait indefinitely: disarm timerfd first
+            timeoutSec = 0;
+            timeoutNs = 0;
+        }
         int ready = epollWait0(epollFd.intValue(), events.memoryAddress(), events.length(), timerFd.intValue(),
                                timeoutSec, timeoutNs);
         if (ready < 0) {
@@ -100,7 +114,21 @@ public final class Native {
         }
         return ready;
     }
-    private static native int epollWait0(int efd, long address, int len, int timerFd, int timeoutSec, int timeoutNs);
+
+    static int epollWait(FileDescriptor epollFd, EpollEventArray events, boolean immediatePoll) throws IOException {
+        return epollWait(epollFd, events, immediatePoll ? 0 : -1);
+    }
+
+    /**
+     * This uses epoll's own timeout and does not reset/re-arm any timerfd
+     */
+    static int epollWait(FileDescriptor epollFd, EpollEventArray events, int timeoutMillis) throws IOException {
+        int ready = epollWait(epollFd.intValue(), events.memoryAddress(), events.length(), timeoutMillis);
+        if (ready < 0) {
+            throw newIOException("epoll_wait", ready);
+        }
+        return ready;
+    }
 
     /**
      * Non-blocking variant of
@@ -115,6 +143,8 @@ public final class Native {
         return ready;
     }
 
+    private static native int epollWait0(int efd, long address, int len, int timerFd, int timeoutSec, int timeoutNs);
+    private static native int epollWait(int efd, long address, int len, int timeout);
     private static native int epollBusyWait0(int efd, long address, int len);
 
     public static void epollCtlAdd(int efd, final int fd, final int flags) throws IOException {
@@ -168,6 +198,18 @@ public final class Native {
     }
 
     private static native int sendmmsg0(
+            int fd, boolean ipv6, NativeDatagramPacketArray.NativeDatagramPacket[] msgs, int offset, int len);
+
+    static int recvmmsg(int fd, boolean ipv6, NativeDatagramPacketArray.NativeDatagramPacket[] msgs,
+                        int offset, int len) throws IOException {
+        int res = recvmmsg0(fd, ipv6, msgs, offset, len);
+        if (res >= 0) {
+            return res;
+        }
+        return ioResult("recvmmsg", res);
+    }
+
+    private static native int recvmmsg0(
             int fd, boolean ipv6, NativeDatagramPacketArray.NativeDatagramPacket[] msgs, int offset, int len);
 
     // epoll_event related

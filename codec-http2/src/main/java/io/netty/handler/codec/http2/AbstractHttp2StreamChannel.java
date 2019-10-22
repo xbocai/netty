@@ -757,6 +757,8 @@ abstract class AbstractHttp2StreamChannel extends DefaultAttributeMap implements
             if (!isActive()) {
                 return;
             }
+            updateLocalWindowIfNeeded();
+
             switch (readStatus) {
                 case IDLE:
                     readStatus = ReadStatus.IN_PROGRESS;
@@ -770,24 +772,31 @@ abstract class AbstractHttp2StreamChannel extends DefaultAttributeMap implements
             }
         }
 
+        private Object pollQueuedMessage() {
+            return inboundBuffer == null ? null : inboundBuffer.poll();
+        }
+
         void doBeginRead() {
-            Object message;
-            if (inboundBuffer == null || (message = inboundBuffer.poll()) == null) {
-                if (readEOS) {
-                    unsafe.closeForcibly();
+            // Process messages until there are none left (or the user stopped requesting) and also handle EOS.
+            while (readStatus != ReadStatus.IDLE) {
+                Object message = pollQueuedMessage();
+                if (message == null) {
+                    if (readEOS) {
+                        unsafe.closeForcibly();
+                    }
+                    break;
                 }
-            } else {
                 final RecvByteBufAllocator.Handle allocHandle = recvBufAllocHandle();
                 allocHandle.reset(config());
                 boolean continueReading = false;
                 do {
                     flowControlledBytes += doRead0((Http2Frame) message, allocHandle);
-                } while ((readEOS || (continueReading = allocHandle.continueReading())) &&
-                        (message = inboundBuffer.poll()) != null);
+                } while ((readEOS || (continueReading = allocHandle.continueReading()))
+                        && (message = pollQueuedMessage()) != null);
 
                 if (continueReading && isParentReadInProgress() && !readEOS) {
                     // Currently the parent and child channel are on the same EventLoop thread. If the parent is
-                    // currently reading it is possile that more frames will be delivered to this child channel. In
+                    // currently reading it is possible that more frames will be delivered to this child channel. In
                     // the case that this child channel still wants to read we delay the channelReadComplete on this
                     // child channel until the parent is done reading.
                     if (!readCompletePending) {
@@ -825,8 +834,6 @@ abstract class AbstractHttp2StreamChannel extends DefaultAttributeMap implements
             } else {
                 readStatus = ReadStatus.IDLE;
             }
-
-            updateLocalWindowIfNeeded();
 
             allocHandle.readComplete();
             pipeline().fireChannelReadComplete();
@@ -1014,7 +1021,7 @@ abstract class AbstractHttp2StreamChannel extends DefaultAttributeMap implements
      * window, without having to create a new {@link WriteBufferWaterMark} object whenever the flow control window
      * changes.
      */
-    private final class Http2StreamChannelConfig extends DefaultChannelConfig {
+    private static final class Http2StreamChannelConfig extends DefaultChannelConfig {
         Http2StreamChannelConfig(Channel channel) {
             super(channel);
         }

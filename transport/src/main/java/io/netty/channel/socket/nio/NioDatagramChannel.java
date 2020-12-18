@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -30,6 +30,7 @@ import io.netty.channel.nio.AbstractNioMessageChannel;
 import io.netty.channel.socket.DatagramChannelConfig;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.InternetProtocolFamily;
+import io.netty.util.internal.ObjectUtil;
 import io.netty.util.internal.SocketUtils;
 import io.netty.util.internal.PlatformDependent;
 import io.netty.util.internal.StringUtil;
@@ -404,13 +405,8 @@ public final class NioDatagramChannel
 
         checkJavaVersion();
 
-        if (multicastAddress == null) {
-            throw new NullPointerException("multicastAddress");
-        }
-
-        if (networkInterface == null) {
-            throw new NullPointerException("networkInterface");
-        }
+        ObjectUtil.checkNotNull(multicastAddress, "multicastAddress");
+        ObjectUtil.checkNotNull(networkInterface, "networkInterface");
 
         try {
             MembershipKey key;
@@ -484,12 +480,8 @@ public final class NioDatagramChannel
             ChannelPromise promise) {
         checkJavaVersion();
 
-        if (multicastAddress == null) {
-            throw new NullPointerException("multicastAddress");
-        }
-        if (networkInterface == null) {
-            throw new NullPointerException("networkInterface");
-        }
+        ObjectUtil.checkNotNull(multicastAddress, "multicastAddress");
+        ObjectUtil.checkNotNull(networkInterface, "networkInterface");
 
         synchronized (this) {
             if (memberships != null) {
@@ -538,16 +530,10 @@ public final class NioDatagramChannel
             InetAddress sourceToBlock, ChannelPromise promise) {
         checkJavaVersion();
 
-        if (multicastAddress == null) {
-            throw new NullPointerException("multicastAddress");
-        }
-        if (sourceToBlock == null) {
-            throw new NullPointerException("sourceToBlock");
-        }
+        ObjectUtil.checkNotNull(multicastAddress, "multicastAddress");
+        ObjectUtil.checkNotNull(sourceToBlock, "sourceToBlock");
+        ObjectUtil.checkNotNull(networkInterface, "networkInterface");
 
-        if (networkInterface == null) {
-            throw new NullPointerException("networkInterface");
-        }
         synchronized (this) {
             if (memberships != null) {
                 List<MembershipKey> keys = memberships.get(multicastAddress);

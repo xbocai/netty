@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -33,6 +33,7 @@ import io.netty.util.ReferenceCounted;
 import io.netty.util.collection.IntObjectHashMap;
 import io.netty.util.collection.IntObjectMap;
 import io.netty.util.internal.UnstableApi;
+import io.netty.util.internal.logging.InternalLogLevel;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
@@ -331,7 +332,7 @@ public class Http2FrameCodec extends Http2ConnectionHandler {
         } else if (msg instanceof Http2SettingsFrame) {
             encoder().writeSettings(ctx, ((Http2SettingsFrame) msg).settings(), promise);
         } else if (msg instanceof Http2SettingsAckFrame) {
-            // In the event of manual SETTINGS ACK is is assumed the encoder will apply the earliest received but not
+            // In the event of manual SETTINGS ACK, it is assumed the encoder will apply the earliest received but not
             // yet ACKed settings.
             encoder().writeSettingsAck(ctx, promise);
         } else if (msg instanceof Http2GoAwayFrame) {
@@ -529,8 +530,12 @@ public class Http2FrameCodec extends Http2ConnectionHandler {
 
     private void onHttp2UnknownStreamError(@SuppressWarnings("unused") ChannelHandlerContext ctx, Throwable cause,
                                    Http2Exception.StreamException streamException) {
-        // Just log....
-        LOG.warn("Stream exception thrown for unknown stream {}.", streamException.streamId(), cause);
+        // It is normal to hit a race condition where we still receive frames for a stream that this
+        // peer has deemed closed, such as if this peer sends a RST(CANCEL) to discard the request.
+        // Since this is likely to be normal we log at DEBUG level.
+        InternalLogLevel level =
+            streamException.error() == Http2Error.STREAM_CLOSED ? InternalLogLevel.DEBUG : InternalLogLevel.WARN;
+        LOG.log(level, "Stream exception thrown for unknown stream {}.", streamException.streamId(), cause);
     }
 
     @Override
@@ -543,6 +548,10 @@ public class Http2FrameCodec extends Http2ConnectionHandler {
         @Override
         public void onUnknownFrame(
                 ChannelHandlerContext ctx, byte frameType, int streamId, Http2Flags flags, ByteBuf payload) {
+            if (streamId == 0) {
+                // Ignore unknown frames on connection stream, for example: HTTP/2 GREASE testing
+                return;
+            }
             onHttp2Frame(ctx, new DefaultHttp2UnknownFrame(frameType, flags, payload)
                     .stream(requireStream(streamId)).retain());
         }
@@ -670,7 +679,7 @@ public class Http2FrameCodec extends Http2ConnectionHandler {
     static class DefaultHttp2FrameStream implements Http2FrameStream {
 
         private volatile int id = -1;
-        volatile Http2Stream stream;
+        private volatile Http2Stream stream;
 
         final Http2FrameStreamEvent stateChanged = Http2FrameStreamEvent.stateChanged(this);
         final Http2FrameStreamEvent writabilityChanged = Http2FrameStreamEvent.writabilityChanged(this);

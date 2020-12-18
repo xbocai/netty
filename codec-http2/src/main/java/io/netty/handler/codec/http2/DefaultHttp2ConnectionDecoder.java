@@ -5,7 +5,7 @@
  * "License"); you may not use this file except in compliance with the License. You may obtain a
  * copy of the License at:
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software distributed under the License
  * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
@@ -214,8 +214,8 @@ public class DefaultHttp2ConnectionDecoder implements Http2ConnectionDecoder {
 
     void onGoAwayRead0(ChannelHandlerContext ctx, int lastStreamId, long errorCode, ByteBuf debugData)
             throws Http2Exception {
-        connection.goAwayReceived(lastStreamId, errorCode, debugData);
         listener.onGoAwayRead(ctx, lastStreamId, errorCode, debugData);
+        connection.goAwayReceived(lastStreamId, errorCode, debugData);
     }
 
     void onUnknownFrame0(ChannelHandlerContext ctx, byte frameType, int streamId, Http2Flags flags,
@@ -507,10 +507,6 @@ public class DefaultHttp2ConnectionDecoder implements Http2ConnectionDecoder {
                 return;
             }
 
-            if (parentStream == null) {
-                throw connectionError(PROTOCOL_ERROR, "Stream %d does not exist", streamId);
-            }
-
             switch (parentStream.state()) {
               case OPEN:
               case HALF_CLOSED_LOCAL:
@@ -585,6 +581,11 @@ public class DefaultHttp2ConnectionDecoder implements Http2ConnectionDecoder {
                             ctx.channel(), frameName, streamId);
                     return true;
                 }
+
+                // Make sure it's not an out-of-order frame, like a rogue DATA frame, for a stream that could
+                // never have existed.
+                verifyStreamMayHaveExisted(streamId);
+
                 // Its possible that this frame would result in stream ID out of order creation (PROTOCOL ERROR) and its
                 // also possible that this frame is received on a CLOSED stream (STREAM_CLOSED after a RST_STREAM is
                 // sent). We don't have enough information to know for sure, so we choose the lesser of the two errors.
